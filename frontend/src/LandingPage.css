@@ -1,0 +1,531 @@
+.landing-page {
+  position: relative;
+  min-height: 100vh;
+  width: 100%;
+  overflow: hidden;
+  background:
+    radial-gradient(
+      circle at 50% 48%,
+      rgba(255, 255, 255, 0.055),
+      transparent 24%
+    ),
+    radial-gradient(
+      circle at 50% 50%,
+      rgba(80, 90, 120, 0.08),
+      transparent 48%
+    ),
+    #020306;
+  color: #ffffff;
+  font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.star-field {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.space-glow {
+  position: absolute;
+  width: 600px;
+  height: 600px;
+  left: 50%;
+  top: 48%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    rgba(255, 255, 255, 0.055) 0%,
+    rgba(255, 255, 255, 0.018) 28%,
+    transparent 70%
+  );
+  filter: blur(25px);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.landing-nav {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 84px;
+  padding: 0 48px;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  z-index: 10;
+
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(2, 3, 6, 0.28);
+  backdrop-filter: blur(12px);
+}
+
+.landing-logo {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 4px;
+}
+
+.landing-logo-mark {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  width: 28px;
+  height: 28px;
+
+  border: 1px solid rgba(255, 255, 255, 0.45);
+  border-radius: 50%;
+
+  font-size: 13px;
+
+  box-shadow:
+    0 0 18px rgba(255, 255, 255, 0.08),
+    inset 0 0 12px rgba(255, 255, 255, 0.04);
+}
+
+.landing-nav-status {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+
+  font-size: 10px;
+  letter-spacing: 2px;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+.landing-nav-status span {
+  width: 6px;
+  height: 6px;
+
+  border-radius: 50%;
+  background: #ffffff;
+
+  box-shadow: 0 0 12px rgba(255, 255, 255, 0.9);
+
+  animation: statusPulse 2s ease-in-out infinite;
+}
+
+.landing-content {
+  position: relative;
+  z-index: 5;
+
+  min-height: 100vh;
+  width: min(900px, 92%);
+
+  margin: 0 auto;
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+
+  text-align: center;
+
+  padding: 120px 0 100px;
+}
+
+.landing-orbit {
+  position: relative;
+
+  width: 180px;
+  height: 180px;
+
+  margin-bottom: 38px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.orbit-ring {
+  position: absolute;
+
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 50%;
+}
+
+.orbit-ring-one {
+  width: 150px;
+  height: 150px;
+
+  animation: orbitRotate 16s linear infinite;
+}
+
+.orbit-ring-two {
+  width: 180px;
+  height: 180px;
+
+  border-color: rgba(255, 255, 255, 0.055);
+
+  animation: orbitRotateReverse 24s linear infinite;
+}
+
+.orbit-ring-one::before,
+.orbit-ring-two::before {
+  content: "";
+
+  position: absolute;
+
+  width: 5px;
+  height: 5px;
+
+  border-radius: 50%;
+
+  background: #ffffff;
+
+  box-shadow: 0 0 14px rgba(255, 255, 255, 0.8);
+}
+
+.orbit-ring-one::before {
+  top: -3px;
+  left: 50%;
+}
+
+.orbit-ring-two::before {
+  bottom: -3px;
+  left: 50%;
+}
+
+.landing-core {
+  position: relative;
+
+  width: 70px;
+  height: 70px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  border-radius: 50%;
+
+  background:
+    radial-gradient(
+      circle at center,
+      rgba(255, 255, 255, 0.18),
+      rgba(255, 255, 255, 0.035) 42%,
+      transparent 70%
+    );
+
+  border: 1px solid rgba(255, 255, 255, 0.22);
+
+  box-shadow:
+    0 0 35px rgba(255, 255, 255, 0.09),
+    inset 0 0 25px rgba(255, 255, 255, 0.05);
+
+  animation: corePulse 3.5s ease-in-out infinite;
+}
+
+.landing-core span {
+  width: 14px;
+  height: 14px;
+
+  border-radius: 50%;
+
+  background: #ffffff;
+
+  box-shadow:
+    0 0 12px rgba(255, 255, 255, 0.9),
+    0 0 30px rgba(255, 255, 255, 0.4);
+
+  animation: coreDot 2.5s ease-in-out infinite;
+}
+
+.landing-eyebrow {
+  margin: 0 0 20px;
+
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 4px;
+
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.landing-content h1 {
+  margin: 0;
+
+  max-width: 850px;
+
+  font-size: clamp(46px, 7vw, 82px);
+  line-height: 0.98;
+  font-weight: 500;
+  letter-spacing: -4px;
+
+  color: #ffffff;
+}
+
+.landing-content h1 span {
+  display: block;
+
+  color: rgba(255, 255, 255, 0.42);
+
+  font-weight: 400;
+}
+
+.landing-description {
+  max-width: 600px;
+
+  margin: 30px auto 0;
+
+  font-size: 15px;
+  line-height: 1.8;
+
+  color: rgba(255, 255, 255, 0.52);
+}
+
+.landing-button {
+  margin-top: 38px;
+
+  display: flex;
+  align-items: center;
+  gap: 25px;
+
+  padding: 15px 18px 15px 24px;
+
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 999px;
+
+  background: rgba(255, 255, 255, 0.055);
+
+  color: #ffffff;
+
+  font-size: 13px;
+  font-weight: 500;
+
+  cursor: pointer;
+
+  backdrop-filter: blur(15px);
+
+  transition:
+    transform 0.3s ease,
+    background 0.3s ease,
+    border-color 0.3s ease,
+    box-shadow 0.3s ease;
+}
+
+.landing-button:hover {
+  transform: translateY(-3px);
+
+  background: rgba(255, 255, 255, 0.1);
+
+  border-color: rgba(255, 255, 255, 0.4);
+
+  box-shadow:
+    0 12px 40px rgba(0, 0, 0, 0.35),
+    0 0 30px rgba(255, 255, 255, 0.05);
+}
+
+.button-arrow {
+  width: 32px;
+  height: 32px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  border-radius: 50%;
+
+  background: #ffffff;
+  color: #020306;
+
+  font-size: 16px;
+
+  transition: transform 0.3s ease;
+}
+
+.landing-button:hover .button-arrow {
+  transform: translateX(3px);
+}
+
+.landing-hint {
+  margin-top: 45px;
+
+  display: flex;
+  align-items: center;
+  gap: 14px;
+
+  font-size: 9px;
+  letter-spacing: 3px;
+
+  color: rgba(255, 255, 255, 0.28);
+}
+
+.hint-line {
+  width: 45px;
+  height: 1px;
+
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.landing-footer {
+  position: absolute;
+
+  bottom: 28px;
+  left: 48px;
+  right: 48px;
+
+  z-index: 10;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  font-size: 9px;
+  letter-spacing: 3px;
+
+  color: rgba(255, 255, 255, 0.25);
+}
+
+@keyframes orbitRotate {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes orbitRotateReverse {
+  from {
+    transform: rotate(360deg);
+  }
+
+  to {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes corePulse {
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow:
+      0 0 35px rgba(255, 255, 255, 0.09),
+      inset 0 0 25px rgba(255, 255, 255, 0.05);
+  }
+
+  50% {
+    transform: scale(1.06);
+    box-shadow:
+      0 0 55px rgba(255, 255, 255, 0.14),
+      inset 0 0 30px rgba(255, 255, 255, 0.08);
+  }
+}
+
+@keyframes coreDot {
+  0%,
+  100% {
+    transform: scale(0.85);
+    opacity: 0.75;
+  }
+
+  50% {
+    transform: scale(1.15);
+    opacity: 1;
+  }
+}
+
+@keyframes statusPulse {
+  0%,
+  100% {
+    opacity: 0.45;
+    transform: scale(0.8);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@media (max-width: 700px) {
+  .landing-nav {
+    height: 72px;
+    padding: 0 22px;
+  }
+
+  .landing-logo {
+    font-size: 12px;
+    letter-spacing: 3px;
+  }
+
+  .landing-nav-status {
+    font-size: 8px;
+    letter-spacing: 1.5px;
+  }
+
+  .landing-content {
+    width: 90%;
+    padding-top: 90px;
+  }
+
+  .landing-orbit {
+    width: 140px;
+    height: 140px;
+    margin-bottom: 30px;
+  }
+
+  .orbit-ring-one {
+    width: 115px;
+    height: 115px;
+  }
+
+  .orbit-ring-two {
+    width: 140px;
+    height: 140px;
+  }
+
+  .landing-core {
+    width: 58px;
+    height: 58px;
+  }
+
+  .landing-content h1 {
+    font-size: clamp(40px, 13vw, 62px);
+    letter-spacing: -2.5px;
+  }
+
+  .landing-description {
+    margin-top: 24px;
+    font-size: 13px;
+    line-height: 1.7;
+  }
+
+  .landing-button {
+    margin-top: 30px;
+  }
+
+  .landing-hint {
+    margin-top: 35px;
+    font-size: 7px;
+    letter-spacing: 2px;
+  }
+
+  .hint-line {
+    width: 25px;
+  }
+
+  .landing-footer {
+    left: 22px;
+    right: 22px;
+    bottom: 18px;
+    font-size: 7px;
+    letter-spacing: 2px;
+  }
+
+  .space-glow {
+    width: 350px;
+    height: 350px;
+  }
+}
