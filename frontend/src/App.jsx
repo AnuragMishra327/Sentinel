@@ -2015,12 +2015,22 @@ useEffect(() => {
                 {notificationPermission !== 'denied' &&
                   !localStorage.getItem('sentinel-fcm-token') && (
                   <button
-                    className="monitor-check"
-                    onClick={enableNotifications}
-                    style={{ marginTop: 14 }}
-                  >
-                    Enable Notifications
-                  </button>
+  className="notification-enable-btn"
+  onClick={enableNotifications}
+>
+  <span className="notification-btn-icon">🔔</span>
+
+  <span className="notification-btn-content">
+    <span className="notification-btn-title">
+      Enable Notifications
+    </span>
+    <span className="notification-btn-subtitle">
+      Get alerted when Sentinel detects an important change
+    </span>
+  </span>
+
+  <span className="notification-btn-arrow">→</span>
+</button>
                 )}
 
                 <p
