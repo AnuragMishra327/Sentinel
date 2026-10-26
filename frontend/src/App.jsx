@@ -249,6 +249,51 @@ useEffect(() => {
 
   registerSavedPushToken()
 }, [user])
+const disableNotifications = async () => {
+  try {
+    const token = localStorage.getItem('sentinel-fcm-token')
+
+    if (token) {
+      const response = await fetch(`${API}/api/push-token`, {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ token }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok || !data.success) {
+        throw new Error(
+          data.error || 'Unable to disable Sentinel notifications.'
+        )
+      }
+    }
+
+    localStorage.removeItem('sentinel-fcm-token')
+
+    setNotificationPermission(
+      'Notification' in window
+        ? Notification.permission
+        : 'unsupported'
+    )
+
+    console.log(
+      'Sentinel push notifications disabled on this device.'
+    )
+  } catch (error) {
+    console.error(
+      'Unable to disable Sentinel push notifications:',
+      error
+    )
+
+    alert(
+      error?.message ||
+        'Unable to disable Sentinel notifications on this device.'
+    )
+  }
+}
 
   useEffect(() => {
     const fetchAlerts = async () => {
@@ -2012,26 +2057,49 @@ useEffect(() => {
                 {detailRow('Firebase UID', user.uid)}
                 {detailRow('Local clock', liveTime.toLocaleTimeString())}
 
-                {notificationPermission !== 'denied' &&
-                  !localStorage.getItem('sentinel-fcm-token') && (
-                  <button
-  className="notification-enable-btn"
-  onClick={enableNotifications}
->
-  <span className="notification-btn-icon">🔔</span>
+                {localStorage.getItem('sentinel-fcm-token') ? (
+  <button
+    className="notification-enable-btn notification-disable-btn"
+    onClick={disableNotifications}
+  >
+    <span className="notification-btn-icon">✓</span>
 
-  <span className="notification-btn-content">
-    <span className="notification-btn-title">
-      Enable Notifications
-    </span>
-    <span className="notification-btn-subtitle">
-      Get alerted when Sentinel detects an important change
-    </span>
-  </span>
+    <span className="notification-btn-content">
+      <span className="notification-btn-title">
+        Notifications Active
+      </span>
 
-  <span className="notification-btn-arrow">→</span>
-</button>
-                )}
+      <span className="notification-btn-subtitle">
+        Sentinel is sending important alerts to this device
+      </span>
+    </span>
+
+    <span className="notification-btn-disable">
+      Disable
+    </span>
+  </button>
+) : (
+  notificationPermission !== 'denied' && (
+    <button
+      className="notification-enable-btn"
+      onClick={enableNotifications}
+    >
+      <span className="notification-btn-icon">🔔</span>
+
+      <span className="notification-btn-content">
+        <span className="notification-btn-title">
+          Enable Notifications
+        </span>
+
+        <span className="notification-btn-subtitle">
+          Get alerted when Sentinel detects an important change
+        </span>
+      </span>
+
+      <span className="notification-btn-arrow">→</span>
+    </button>
+  )
+)}
 
                 <p
                   style={{

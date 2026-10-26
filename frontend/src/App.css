@@ -1306,3 +1306,33 @@ input {
 .notification-enable-btn:hover .notification-btn-arrow {
   transform: translateX(4px);
 }
+.notification-disable-btn {
+  border-color: rgba(74, 222, 160, 0.25);
+  background: linear-gradient(
+    135deg,
+    rgba(74, 222, 160, 0.08),
+    rgba(74, 222, 255, 0.08)
+  );
+}
+
+.notification-disable-btn:hover {
+  border-color: rgba(255, 100, 120, 0.35);
+  background: linear-gradient(
+    135deg,
+    rgba(255, 90, 110, 0.08),
+    rgba(124, 92, 255, 0.10)
+  );
+}
+
+.notification-btn-disable {
+  padding: 7px 11px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 120, 135, 0.25);
+
+  color: rgba(255, 150, 160, 0.9);
+  background: rgba(255, 90, 110, 0.07);
+
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
