@@ -1,3 +1,4 @@
+const https = require('https');
 const os = require('os');
 const express = require('express');
 const cors = require('cors');
@@ -11,6 +12,8 @@ const { analyzeChange: analyzeAgent } = require('./agent');
 // Firebase Admin SDK
 const { initializeApp, cert } = require('firebase-admin/app');
 const { getMessaging } = require('firebase-admin/messaging');
+const { getAuth } = require('firebase-admin/auth');
+
 const serviceAccount = process.env.FIREBASE_SERVICE_ACCOUNT
   ? JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)
   : require('./serviceAccountKey.json');
@@ -20,13 +23,35 @@ initializeApp({
 });
 
 const firebaseMessaging = getMessaging();
+const firebaseAuth = getAuth();
+
 const app = express();
 const PORT = process.env.PORT || 5000;
 
 let testVersion = 1;
 
-const monitoredUrls = new Set();
-const pushTokens = new Set();
+/* -------------------------------------------------------
+   USER-SPECIFIC STATE
+------------------------------------------------------- */
+
+const userMonitors = new Map();
+const userPushTokens = new Map();
+
+function getUserMonitors(uid) {
+  if (!userMonitors.has(uid)) {
+    userMonitors.set(uid, new Set());
+  }
+
+  return userMonitors.get(uid);
+}
+
+function getUserPushTokens(uid) {
+  if (!userPushTokens.has(uid)) {
+    userPushTokens.set(uid, new Set());
+  }
+
+  return userPushTokens.get(uid);
+}
 
 const CHECK_INTERVAL = 60 * 1000;
 const DEDUPLICATION_WINDOW = 24 * 60 * 60 * 1000;
@@ -40,6 +65,58 @@ app.use(express.json());
 
 
 /* -------------------------------------------------------
+   FIREBASE AUTHENTICATION
+------------------------------------------------------- */
+
+async function authenticateUser(req, res, next) {
+  try {
+    const authHeader = req.headers.authorization;
+
+    if (
+      !authHeader ||
+      !authHeader.startsWith('Bearer ')
+    ) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required'
+      });
+    }
+
+    const idToken =
+      authHeader.substring(7);
+
+    if (!idToken) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required'
+      });
+    }
+
+    const decodedToken =
+      await firebaseAuth.verifyIdToken(idToken);
+
+    req.user = {
+      uid: decodedToken.uid,
+      email: decodedToken.email || null,
+      name: decodedToken.name || null
+    };
+
+    next();
+  } catch (error) {
+    console.error(
+      'Authentication failed:',
+      error.message
+    );
+
+    return res.status(401).json({
+      success: false,
+      error: 'Invalid or expired authentication token'
+    });
+  }
+}
+
+
+/* -------------------------------------------------------
    JSON FILE HELPERS
 ------------------------------------------------------- */
 
@@ -49,10 +126,11 @@ function readJsonFile(file, fallback) {
       return fallback;
     }
 
-    const content = fs.readFileSync(
-      file,
-      'utf-8'
-    );
+    const content =
+      fs.readFileSync(
+        file,
+        'utf-8'
+      );
 
     return content.trim()
       ? JSON.parse(content)
@@ -90,36 +168,63 @@ function writeJsonFile(file, data) {
 
 
 /* -------------------------------------------------------
-   LOAD SAVED ALERTS
+   LOAD USER-SPECIFIC ALERTS
 ------------------------------------------------------- */
 
-let automaticAlerts = readJsonFile(
-  alertsFile,
-  []
-);
+let userAlerts =
+  readJsonFile(
+    alertsFile,
+    {}
+  );
 
-if (!Array.isArray(automaticAlerts)) {
-  automaticAlerts = [];
+if (
+  !userAlerts ||
+  typeof userAlerts !== 'object' ||
+  Array.isArray(userAlerts)
+) {
+  userAlerts = {};
 }
 
-automaticAlerts =
-  automaticAlerts.slice(
-    0,
-    MAX_ALERTS
-  );
+function getUserAlerts(uid) {
+  if (!Array.isArray(userAlerts[uid])) {
+    userAlerts[uid] = [];
+  }
+
+  return userAlerts[uid];
+}
 
 
 /* -------------------------------------------------------
-   RESTORE PREVIOUSLY MONITORED URLS
+   RESTORE USER-SPECIFIC MONITORS
 ------------------------------------------------------- */
 
-const savedMemory = readJsonFile(
-  memoryFile,
-  {}
-);
+const savedMemory =
+  readJsonFile(
+    memoryFile,
+    {}
+  );
 
-for (const url of Object.keys(savedMemory)) {
-  monitoredUrls.add(url);
+for (
+  const [uid, userMemory]
+  of Object.entries(savedMemory)
+) {
+  if (
+    !userMemory ||
+    typeof userMemory !== 'object' ||
+    Array.isArray(userMemory)
+  ) {
+    continue;
+  }
+
+  const monitoredUrls =
+    getUserMonitors(uid);
+
+  for (
+    const url
+    of Object.keys(userMemory)
+  ) {
+    monitoredUrls.add(url);
+  }
 }
 
 
@@ -127,14 +232,17 @@ for (const url of Object.keys(savedMemory)) {
    FIREBASE CLOUD MESSAGING
 ------------------------------------------------------- */
 
-async function sendPushNotification(alert) {
+async function sendPushNotification(uid, alert) {
+  const pushTokens =
+    getUserPushTokens(uid);
+
   if (!alert) {
     return;
   }
 
   if (pushTokens.size === 0) {
     console.log(
-      'Push notification skipped: no registered devices.'
+      `Push notification skipped for ${uid}: no registered devices.`
     );
 
     return;
@@ -146,7 +254,7 @@ async function sendPushNotification(alert) {
   try {
     const response =
       await firebaseMessaging
-      .sendEachForMulticast({
+        .sendEachForMulticast({
           tokens,
 
           notification: {
@@ -169,12 +277,11 @@ async function sendPushNotification(alert) {
         });
 
     console.log(
-      `FCM push result: ${response.successCount} sent, ${response.failureCount} failed`
+      `FCM push for ${uid}: ${response.successCount} sent, ${response.failureCount} failed`
     );
 
     response.responses.forEach(
       (result, index) => {
-
         if (result.success) {
           return;
         }
@@ -187,11 +294,6 @@ async function sendPushNotification(alert) {
           errorCode ||
           result.error?.message
         );
-
-        /*
-          Remove invalid or expired
-          registration tokens.
-        */
 
         if (
           errorCode ===
@@ -277,28 +379,72 @@ function analyzeChange(previous, current) {
    WEBSITE OBSERVER
 ------------------------------------------------------- */
 
-async function observeWebsite(url) {
-  const response =
-    await axios.get(
-      url,
-      {
-        timeout: 10000,
+async function observeWebsite(uid, url) {
+  let response;
 
-        headers: {
-          'User-Agent':
-            'Sentinel Monitoring System'
-        }
-      }
-    );
+const requestConfig = {
+  timeout: 30000,
+  maxRedirects: 10,
+
+  headers: {
+    'User-Agent':
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) ' +
+      'AppleWebKit/537.36 (KHTML, like Gecko) ' +
+      'Chrome/156.0.0.0 Safari/537.36',
+
+    'Accept':
+      'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+
+    'Accept-Language': 'en-US,en;q=0.9',
+
+    'Cache-Control': 'no-cache'
+  }
+};
+
+try {
+  response = await axios.get(url, requestConfig);
+} catch (error) {
+  const isLegacySslError =
+    error.code === 'EPROTO' &&
+    String(error.message).includes('unsafe legacy renegotiation');
+
+  if (!isLegacySslError) {
+    throw error;
+  }
+
+  console.log(`Legacy TLS detected. Retrying: ${url}`);
+
+  const legacyHttpsAgent = new https.Agent({
+  secureOptions:
+    require('crypto').constants.SSL_OP_LEGACY_SERVER_CONNECT,
+
+  rejectUnauthorized: false
+});
+
+  response = await axios.get(url, {
+    ...requestConfig,
+    httpsAgent: legacyHttpsAgent
+  });
+}
 
   const $ =
     cheerio.load(
       response.data
     );
 
-  $('script, style, noscript')
-    .remove();
-
+   $(
+  [
+    'script',
+    'style',
+    'noscript',
+    'svg',
+    'canvas',
+    'iframe',
+    'template',
+    'meta',
+    'link'
+  ].join(',')
+).remove();
   const title =
     $('title')
       .text()
@@ -319,15 +465,23 @@ async function observeWebsite(url) {
       {}
     );
 
-  if (!memoryData[url]) {
-    memoryData[url] = {
+  if (
+    !memoryData[uid] ||
+    typeof memoryData[uid] !== 'object' ||
+    Array.isArray(memoryData[uid])
+  ) {
+    memoryData[uid] = {};
+  }
+
+  if (!memoryData[uid][url]) {
+    memoryData[uid][url] = {
       previous: null,
       current: null
     };
   }
 
   const previousObservation =
-    memoryData[url].current;
+    memoryData[uid][url].current;
 
   const newObservation = {
     url,
@@ -359,10 +513,10 @@ async function observeWebsite(url) {
         newObservation.content
     });
 
-  memoryData[url].previous =
+  memoryData[uid][url].previous =
     previousObservation;
 
-  memoryData[url].current =
+  memoryData[uid][url].current =
     newObservation;
 
   writeJsonFile(
@@ -393,10 +547,13 @@ async function observeWebsite(url) {
 
 
 /* -------------------------------------------------------
-   SAVE IMPORTANT ALERT
+   SAVE USER-SPECIFIC IMPORTANT ALERT
 ------------------------------------------------------- */
 
-function saveAutomaticAlert(result) {
+function saveAutomaticAlert(uid, result) {
+  const automaticAlerts =
+    getUserAlerts(uid);
+
   const message =
     result.agent?.notification;
 
@@ -410,33 +567,18 @@ function saveAutomaticAlert(result) {
   const now =
     Date.now();
 
-  const duplicate =
-    automaticAlerts.some(
-      alert => {
+ const duplicate =
+  automaticAlerts.some((alert) => {
+    const alertTime =
+      new Date(alert.time).getTime();
 
-        const alertTime =
-          new Date(
-            alert.time
-          ).getTime();
-
-        return (
-          alert.url ===
-            result.url &&
-
-          alert.message ===
-            message &&
-
-          Number.isFinite(
-            alertTime
-          ) &&
-
-          now - alertTime >= 0 &&
-
-          now - alertTime <
-            DEDUPLICATION_WINDOW
-        );
-      }
+    return (
+      alert.url === result.url &&
+      Number.isFinite(alertTime) &&
+      now - alertTime >= 0 &&
+      now - alertTime < DEDUPLICATION_WINDOW
     );
+  });
 
   if (duplicate) {
     console.log(
@@ -473,7 +615,7 @@ function saveAutomaticAlert(result) {
     alert
   );
 
-  automaticAlerts =
+  userAlerts[uid] =
     automaticAlerts.slice(
       0,
       MAX_ALERTS
@@ -481,7 +623,7 @@ function saveAutomaticAlert(result) {
 
   writeJsonFile(
     alertsFile,
-    automaticAlerts
+    userAlerts
   );
 
   return alert;
@@ -495,7 +637,6 @@ function saveAutomaticAlert(result) {
 app.get(
   '/',
   (req, res) => {
-
     res.json({
       success: true,
 
@@ -528,7 +669,6 @@ app.get(
 app.get(
   '/api/health',
   (req, res) => {
-
     const totalMemory =
       os.totalmem();
 
@@ -544,6 +684,45 @@ app.get(
 
     const processMemory =
       process.memoryUsage();
+
+    const registeredUrls =
+      Array.from(
+        userMonitors.values()
+      ).reduce(
+        (total, urls) =>
+          total + urls.size,
+        0
+      );
+
+    const savedAlerts =
+      Object.values(
+        userAlerts
+      ).reduce(
+        (total, alerts) =>
+          total +
+          (
+            Array.isArray(alerts)
+              ? alerts.length
+              : 0
+          ),
+        0
+      );
+
+    const registeredPushDevices =
+      Array.from(
+        userPushTokens.values()
+      ).reduce(
+        (total, tokens) =>
+          total + tokens.size,
+        0
+      );
+
+    const registeredUsers =
+      new Set([
+        ...userMonitors.keys(),
+        ...userPushTokens.keys(),
+        ...Object.keys(userAlerts)
+      ]).size;
 
     res.json({
       success: true,
@@ -630,14 +809,13 @@ app.get(
       },
 
       monitoring: {
-        registeredUrls:
-          monitoredUrls.size,
+        registeredUrls,
 
-        savedAlerts:
-          automaticAlerts.length,
+        savedAlerts,
 
-        registeredPushDevices:
-          pushTokens.size,
+        registeredPushDevices,
+
+        registeredUsers,
 
         checkIntervalSeconds:
           CHECK_INTERVAL /
@@ -658,7 +836,12 @@ app.get(
 
 app.post(
   '/api/push-token',
+  authenticateUser,
   (req, res) => {
+    const pushTokens =
+      getUserPushTokens(
+        req.user.uid
+      );
 
     const { token } =
       req.body;
@@ -685,7 +868,7 @@ app.post(
     );
 
     console.log(
-      `FCM device registered. Total devices: ${pushTokens.size}`
+      `FCM device registered for ${req.user.uid}. User devices: ${pushTokens.size}`
     );
 
     res.json({
@@ -707,7 +890,12 @@ app.post(
 
 app.delete(
   '/api/push-token',
+  authenticateUser,
   (req, res) => {
+    const pushTokens =
+      getUserPushTokens(
+        req.user.uid
+      );
 
     const { token } =
       req.body;
@@ -737,7 +925,13 @@ app.delete(
 
 app.get(
   '/api/observe',
+  authenticateUser,
   async (req, res) => {
+    const uid =
+      req.user.uid;
+
+    const monitoredUrls =
+      getUserMonitors(uid);
 
     const { url } =
       req.query;
@@ -764,17 +958,13 @@ app.get(
     }
 
     try {
-      /*
-        Register website for
-        automatic monitoring.
-      */
-
       monitoredUrls.add(
         url
       );
 
       const result =
         await observeWebsite(
+          uid,
           url
         );
 
@@ -785,6 +975,7 @@ app.get(
       ) {
         const alert =
           saveAutomaticAlert(
+            uid,
             result
           );
 
@@ -795,6 +986,7 @@ app.get(
           );
 
           await sendPushNotification(
+            uid,
             alert
           );
         }
@@ -804,6 +996,20 @@ app.get(
         result
       );
     } catch (error) {
+      /*
+        If the very first observation fails,
+        do not leave a broken monitor registered.
+      */
+      const memoryData =
+        readJsonFile(
+          memoryFile,
+          {}
+        );
+
+      if (!memoryData[uid]?.[url]) {
+        monitoredUrls.delete(url);
+      }
+
       console.error(
         'Observation failed:',
         error.message
@@ -827,14 +1033,19 @@ app.get(
   }
 );
 
-
 /* -------------------------------------------------------
    REMOVE / STOP MONITORING WEBSITE
 ------------------------------------------------------- */
 
 app.delete(
   '/api/monitor',
+  authenticateUser,
   (req, res) => {
+    const uid =
+      req.user.uid;
+
+    const monitoredUrls =
+      getUserMonitors(uid);
 
     const { url } =
       req.body;
@@ -861,8 +1072,8 @@ app.delete(
     }
 
     /*
-      Remove URL from automatic
-      monitoring.
+      Remove the URL only from
+      this user's monitor list.
     */
 
     const wasMonitored =
@@ -871,9 +1082,9 @@ app.delete(
       );
 
     /*
-      Remove observation memory
-      so Sentinel completely
-      forgets this monitor.
+      Remove only this user's
+      observation memory for
+      this URL.
     */
 
     const memoryData =
@@ -884,11 +1095,25 @@ app.delete(
 
     const hadMemory =
       Boolean(
-        memoryData[url]
+        memoryData[uid]?.[url]
       );
 
     if (hadMemory) {
-      delete memoryData[url];
+      delete memoryData[uid][url];
+
+      /*
+        If this user has no
+        remaining memory entries,
+        remove the empty object.
+      */
+
+      if (
+        Object.keys(
+          memoryData[uid]
+        ).length === 0
+      ) {
+        delete memoryData[uid];
+      }
 
       writeJsonFile(
         memoryFile,
@@ -896,8 +1121,20 @@ app.delete(
       );
     }
 
+    /*
+      If the user has no monitors
+      remaining, remove their empty
+      monitor Set from memory.
+    */
+
+    if (
+      monitoredUrls.size === 0
+    ) {
+      userMonitors.delete(uid);
+    }
+
     console.log(
-      'Monitor removed:',
+      `Monitor removed for ${uid}:`,
       url
     );
 
@@ -926,7 +1163,12 @@ app.delete(
 
 app.get(
   '/api/monitors',
+  authenticateUser,
   (req, res) => {
+    const monitoredUrls =
+      getUserMonitors(
+        req.user.uid
+      );
 
     const urls =
       Array.from(
@@ -952,7 +1194,12 @@ app.get(
 
 app.get(
   '/api/alerts',
+  authenticateUser,
   (req, res) => {
+    const automaticAlerts =
+      getUserAlerts(
+        req.user.uid
+      );
 
     res.json({
       success: true,
@@ -976,47 +1223,43 @@ const monitoringTimer =
     async () => {
 
       /*
-        Create an array snapshot.
-        This prevents problems if
-        a monitor is removed while
-        the loop is running.
+        Take a snapshot of every
+        user's currently monitored
+        URLs.
+
+        This prevents iteration
+        problems if a user removes
+        a monitor while a check is
+        already running.
       */
 
-      const urls =
+      const userSnapshots =
         Array.from(
-          monitoredUrls
+          userMonitors.entries()
+        ).map(
+          ([uid, urls]) => [
+            uid,
+            Array.from(urls)
+          ]
         );
 
       for (
-        const url of urls
+        const [uid, urls]
+        of userSnapshots
       ) {
+        const monitoredUrls =
+          getUserMonitors(uid);
 
-        /*
-          If the monitor was
-          removed after the
-          snapshot was created,
-          skip it.
-        */
-
-        if (
-          !monitoredUrls.has(
-            url
-          )
+        for (
+          const url
+          of urls
         ) {
-          continue;
-        }
-
-        try {
-          const result =
-            await observeWebsite(
-              url
-            );
 
           /*
-            Check again in case
-            the monitor was removed
-            while the HTTP request
-            was running.
+            The user may have
+            removed this monitor
+            after the snapshot
+            was created.
           */
 
           if (
@@ -1027,48 +1270,87 @@ const monitoringTimer =
             continue;
           }
 
-          if (
-            !result.change.changed
-          ) {
+          try {
+            const result =
+              await observeWebsite(
+                uid,
+                url
+              );
+
+            /*
+              Check once again
+              because the monitor
+              may have been removed
+              while axios was
+              fetching the page.
+            */
+
+            if (
+              !monitoredUrls.has(
+                url
+              )
+            ) {
+              continue;
+            }
+
+            if (
+              !result.change.changed
+            ) {
+              console.log(
+                `No change for ${uid}:`,
+                url
+              );
+
+              continue;
+            }
+
             console.log(
-              'No change:',
+              `Change detected for ${uid}:`,
               url
             );
 
-            continue;
-          }
+            /*
+              Create an alert only
+              when the Sentinel
+              agent considers the
+              change important.
+            */
 
-          console.log(
-            'Change detected:',
-            url
-          );
+            if (
+              result.agent?.important &&
+              result.agent?.notification
+            ) {
+              const alert =
+                saveAutomaticAlert(
+                  uid,
+                  result
+                );
 
-          if (
-            result.agent?.important &&
-            result.agent?.notification
-          ) {
-            const alert =
-              saveAutomaticAlert(
-                result
-              );
+              if (alert) {
+                console.log(
+                  `IMPORTANT ALERT for ${uid}:`,
+                  alert.message
+                );
 
-            if (alert) {
-              console.log(
-                'IMPORTANT ALERT:',
-                alert.message
-              );
+                /*
+                  Send the notification
+                  only to devices belonging
+                  to this Firebase user.
+                */
 
-              await sendPushNotification(
-                alert
-              );
+                await sendPushNotification(
+                  uid,
+                  alert
+                );
+              }
             }
+          } catch (error) {
+            console.error(
+              `Automatic check failed for ${uid}:`,
+              url,
+              error.message
+            );
           }
-        } catch (error) {
-          console.error(
-            'Automatic check failed:',
-            url,
-            error.message
-          );
         }
       }
     },
@@ -1084,7 +1366,6 @@ const monitoringTimer =
 app.get(
   '/test-page',
   (req, res) => {
-
     const deadline =
       testVersion === 2
         ? '30 September 2026'
@@ -1118,7 +1399,6 @@ app.get(
 app.get(
   '/test-page/set-version',
   (req, res) => {
-
     const { version } =
       req.query;
 
@@ -1162,6 +1442,30 @@ const server =
   app.listen(
     PORT,
     () => {
+      const registeredMonitorCount =
+        Array.from(
+          userMonitors.values()
+        ).reduce(
+          (total, urls) =>
+            total + urls.size,
+          0
+        );
+
+      const registeredPushDeviceCount =
+        Array.from(
+          userPushTokens.values()
+        ).reduce(
+          (total, tokens) =>
+            total + tokens.size,
+          0
+        );
+
+      const registeredUserCount =
+        new Set([
+          ...userMonitors.keys(),
+          ...userPushTokens.keys(),
+          ...Object.keys(userAlerts)
+        ]).size;
 
       console.log(
         `Sentinel backend running on http://localhost:${PORT}`
@@ -1172,11 +1476,19 @@ const server =
       );
 
       console.log(
-        `Registered monitors: ${monitoredUrls.size}`
+        `Registered users: ${registeredUserCount}`
       );
 
       console.log(
-        `Registered push devices: ${pushTokens.size}`
+        `Registered monitors: ${registeredMonitorCount}`
+      );
+
+      console.log(
+        `Registered push devices: ${registeredPushDeviceCount}`
+      );
+
+      console.log(
+        'Firebase Authentication ready.'
       );
 
       console.log(
@@ -1201,7 +1513,6 @@ function shutdown() {
 
   server.close(
     () => {
-
       console.log(
         'Sentinel backend stopped.'
       );

@@ -19,51 +19,28 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(true)
   const [activePage, setActivePage] = useState('Dashboard')
   const [showModal, setShowModal] = useState(false)
+  const authenticatedFetch = async (url, options = {}) => {
+  if (!user) {
+    throw new Error('You must be signed in to Sentinel.')
+  }
 
-  const [monitors, setMonitors] = useState(() => {
-    try {
-      const saved = localStorage.getItem('sentinel-monitors')
-      if (saved) {
-        const parsed = JSON.parse(saved)
-        if (Array.isArray(parsed)) return parsed
-      }
-    } catch {
-      console.log('Unable to restore saved monitors')
-    }
+  const idToken = await user.getIdToken()
 
-    return [
-      {
-        name: 'UP Scholarship Portal',
-        url: '',
-        description: 'Monitoring for meaningful updates',
-        lastChecked: '2 min ago',
-      },
-      {
-        name: 'Government Schemes',
-        url: '',
-        description: 'Monitoring for new announcements',
-        lastChecked: '5 min ago',
-      },
-    ]
+  return fetch(url, {
+    ...options,
+    headers: {
+      ...(options.headers || {}),
+      Authorization: `Bearer ${idToken}`,
+    },
   })
+}
+
+  const [monitors, setMonitors] = useState([])
 
   const [monitorUrl, setMonitorUrl] = useState('')
   const [addingMonitor, setAddingMonitor] = useState(false)
 
-  const [activity, setActivity] = useState([
-    {
-      source: 'UP Scholarship Portal',
-      action: 'Checked for updates',
-      time: '2 min ago',
-      status: 'NO CHANGE',
-    },
-    {
-      source: 'Government Schemes',
-      action: 'Checked for updates',
-      time: '5 min ago',
-      status: 'NO CHANGE',
-    },
-  ])
+  const [activity, setActivity] = useState([])
 
   const [alerts, setAlerts] = useState([])
   const [liveTime, setLiveTime] = useState(new Date())
@@ -84,6 +61,52 @@ function App() {
 
     return unsubscribe
   }, [])
+useEffect(() => {
+  setActivity([])
+
+  if (!user) {
+    setMonitors([])
+    return
+  }
+
+  const fetchUserMonitors = async () => {
+    try {
+      const response = await authenticatedFetch(
+        `${API}/api/monitors`
+      )
+
+      const data = await response.json()
+
+      if (!response.ok || !data.success) {
+        throw new Error(
+          data.error || 'Unable to load monitors.'
+        )
+      }
+
+      const urls = Array.isArray(data.monitors)
+        ? data.monitors
+        : []
+
+      const userMonitorCards = urls.map((url) => ({
+        name: url,
+        url,
+        description: 'Monitoring for meaningful updates',
+        lastChecked: 'Active',
+      }))
+
+      setMonitors(userMonitorCards)
+    } catch (error) {
+      console.error(
+        'Unable to load user monitors:',
+        error
+      )
+
+      setMonitors([])
+    }
+  }
+
+  fetchUserMonitors()
+}, [user])
 
   useEffect(() => {
     const timer = setInterval(() => setLiveTime(new Date()), 1000)
@@ -118,14 +141,6 @@ function App() {
     return unsubscribe
   }, [])
 
-  useEffect(() => {
-    try {
-      localStorage.setItem('sentinel-monitors', JSON.stringify(monitors))
-    } catch {
-      console.log('Unable to save monitors')
-    }
-  }, [monitors])
-
   const showBrowserNotification = (title, body, tag) => {
     if (!('Notification' in window) || Notification.permission !== 'granted') return
 
@@ -150,7 +165,7 @@ function App() {
     const token = await enablePushNotifications()
 
     if (token) {
-      const response = await fetch(`${API}/api/push-token`, {
+      const response = await authenticatedFetch(`${API}/api/push-token`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -212,7 +227,7 @@ useEffect(() => {
     if (!token) return
 
     try {
-      const response = await fetch(
+      const response = await authenticatedFetch(
         `${API}/api/push-token`,
         {
           method: 'POST',
@@ -254,7 +269,7 @@ const disableNotifications = async () => {
     const token = localStorage.getItem('sentinel-fcm-token')
 
     if (token) {
-      const response = await fetch(`${API}/api/push-token`, {
+      const response = await authenticatedFetch(`${API}/api/push-token`, {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
@@ -296,9 +311,18 @@ const disableNotifications = async () => {
 }
 
   useEffect(() => {
+    if (!user) {
+      setAlerts([])
+      seenAlertIds.current.clear()
+      alertsInitialized.current = false
+      return
+    }
+
     const fetchAlerts = async () => {
       try {
-        const response = await fetch(`${API}/api/alerts`)
+        const response = await authenticatedFetch(
+  `${API}/api/alerts`
+)
         const data = await response.json()
 
         if (response.ok && data.success) {
@@ -320,7 +344,11 @@ const disableNotifications = async () => {
             newAlerts.forEach((item) => {
               seenAlertIds.current.add(String(item.id))
 
-              if ('Notification' in window && Notification.permission === 'granted') {
+              if (
+                'Notification' in window &&
+                Notification.permission === 'granted' &&
+                localStorage.getItem('sentinel-fcm-token')
+              ) {
                 showBrowserNotification(
                   `Sentinel Alert · ${item.source || 'Important Update'}`,
                   item.message || 'A meaningful website change was detected.',
@@ -339,8 +367,8 @@ const disableNotifications = async () => {
 
     fetchAlerts()
     const interval = setInterval(fetchAlerts, 5000)
-    return () => clearInterval(interval)
-  }, [])
+return () => clearInterval(interval)
+}, [user])
 
   useEffect(() => {
     const fetchHealth = async () => {
@@ -363,7 +391,6 @@ const disableNotifications = async () => {
 
     fetchHealth()
     const interval = setInterval(fetchHealth, 5000)
-
     return () => clearInterval(interval)
   }, [])
 
@@ -404,9 +431,9 @@ const disableNotifications = async () => {
     if (!monitor.url) return
 
     try {
-      const response = await fetch(
-        `${API}/api/observe?url=${encodeURIComponent(monitor.url)}`
-      )
+      const response = await authenticatedFetch(
+  `${API}/api/observe?url=${encodeURIComponent(monitor.url)}`
+     )
       const data = await response.json()
 
       if (!response.ok) {
@@ -485,12 +512,12 @@ const disableNotifications = async () => {
     setAddingMonitor(true)
 
     try {
-      const response = await fetch(
+      const response = await authenticatedFetch(
         `${API}/api/observe?url=${encodeURIComponent(url)}`
       )
       const data = await response.json()
 
-      if (!response.ok) {
+      if (!response.ok || !data.success) {
         alert(data.error || 'Unable to monitor this website')
         return
       }
@@ -555,15 +582,15 @@ const disableNotifications = async () => {
     if (!confirmed) return
 
     try {
-      const response = await fetch(`${API}/api/monitor`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          url: monitor.url,
-        }),
-      })
+      const response = await authenticatedFetch(`${API}/api/monitor`, {
+  method: 'DELETE',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    url: monitor.url,
+  }),
+})
 
       const data = await response.json()
 
