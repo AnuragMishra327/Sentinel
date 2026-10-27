@@ -616,6 +616,38 @@ return () => clearInterval(interval)
       alert('Unable to connect to Sentinel backend.')
     }
   }
+  const clearAlerts = async () => {
+  if (alerts.length === 0) return
+
+  const confirmed = window.confirm(
+    'Clear all alerts for your Sentinel account?'
+  )
+
+  if (!confirmed) return
+
+  try {
+    const response = await authenticatedFetch(
+      `${API}/api/alerts`,
+      {
+        method: 'DELETE',
+      }
+    )
+
+    const data = await response.json()
+
+    if (!response.ok || !data.success) {
+      alert(data.error || 'Unable to clear alerts.')
+      return
+    }
+
+    setAlerts([])
+    seenAlertIds.current.clear()
+    alertsInitialized.current = true
+
+  } catch {
+    alert('Unable to connect to Sentinel backend.')
+  }
+}
 
   const handleLogout = async () => {
     try {
@@ -1229,13 +1261,36 @@ return () => clearInterval(interval)
 
         {activePage === 'Alerts' && (
           <>
-            <section className="hero-section">
-              <p className="eyebrow">SENTINEL ALERTS</p>
-              <h1>Important Updates</h1>
-              <p className="subtitle">
-                Updates Sentinel believes may be important to you.
-              </p>
-            </section>
+ <section
+  className="hero-section"
+  style={{ position: 'relative' }}
+>
+  <p className="eyebrow">SENTINEL ALERTS</p>
+
+  <h1>Important Updates</h1>
+
+  <p className="subtitle">
+    Updates Sentinel believes may be important to you.
+  </p>
+
+  {alerts.length > 0 && (
+    <button
+      className="add-monitor"
+      onClick={clearAlerts}
+      style={{
+        position: 'absolute',
+        right: 0,
+        top: '50%',
+        transform: 'translateY(-50%)',
+        borderColor: 'rgba(251,113,133,.35)',
+        color: '#fda4af',
+        background: 'rgba(127,29,29,.12)',
+      }}
+    >
+      Clear Alerts
+    </button>
+  )}
+</section>
 
             <section className="activity-section">
               {alerts.length === 0 ? (

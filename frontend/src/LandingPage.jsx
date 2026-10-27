@@ -155,7 +155,9 @@ function LandingPage({ onEnter }) {
 
       <header className="landing-nav">
         <div className="landing-logo">
-          <span className="landing-logo-mark">◉</span>
+          <span className="landing-logo-mark">
+  <span className="landing-logo-dot"></span>
+</span>
           <span>SENTINEL</span>
         </div>
 

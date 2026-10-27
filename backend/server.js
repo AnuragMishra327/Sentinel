@@ -1217,6 +1217,34 @@ app.get(
 /* -------------------------------------------------------
    AUTOMATIC WEBSITE MONITORING
 ------------------------------------------------------- */
+/* -------------------------------------------------------
+   CLEAR CURRENT USER'S ALERTS
+------------------------------------------------------- */
+
+app.delete(
+  '/api/alerts',
+  authenticateUser,
+  (req, res) => {
+    const uid = req.user.uid;
+
+    userAlerts[uid] = [];
+
+    writeJsonFile(
+      alertsFile,
+      userAlerts
+    );
+
+    console.log(
+      `Alerts cleared for ${uid}`
+    );
+
+    res.json({
+      success: true,
+      message: 'All alerts cleared successfully',
+      count: 0
+    });
+  }
+);
 
 const monitoringTimer =
   setInterval(
